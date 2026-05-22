@@ -98,6 +98,21 @@ video {
   font-size: 20px;
 }
 
+.play-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  min-width: 148px;
+  padding: 0 18px;
+  background: #2f8f5b;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+}
+
+.play-overlay[hidden] {
+  display: none;
+}
+
 .panel {
   align-self: start;
   border-radius: 8px;

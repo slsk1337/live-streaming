@@ -26,7 +26,8 @@ const els = {
   shareLink: document.getElementById("shareLink"),
   copyLink: document.getElementById("copyLink"),
   roomInput: document.getElementById("roomInput"),
-  joinRoom: document.getElementById("joinRoom")
+  joinRoom: document.getElementById("joinRoom"),
+  playStream: document.getElementById("playStream")
 };
 
 let role = "idle";
@@ -34,6 +35,7 @@ let roomId = new URLSearchParams(location.search).get("room") || "";
 let localStream = null;
 let viewerPeer = null;
 const hostPeers = new Map();
+const pendingIce = new Map();
 
 function setStatus(message) {
   els.status.textContent = message;
@@ -47,9 +49,22 @@ function setActivePane(next) {
   els.watchPane.classList.toggle("active", !isHost);
 }
 
+async function playPreview() {
+  try {
+    await els.preview.play();
+    els.playStream.hidden = true;
+  } catch {
+    els.playStream.hidden = false;
+    if (role === "viewer") {
+      setStatus("Tap Play stream to start video on this device.");
+    }
+  }
+}
+
 function showVideo(stream) {
   els.preview.srcObject = stream;
   els.emptyState.style.display = stream ? "none" : "grid";
+  if (stream) playPreview();
 }
 
 function currentProfile() {
@@ -74,7 +89,10 @@ function getRoomFromInput(value) {
 
 function rtcConfig() {
   return {
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:global.stun.twilio.com:3478" }
+    ]
   };
 }
 
@@ -93,6 +111,14 @@ async function createHostPeer(viewerId) {
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       socket.emit("signal:ice", { targetId: viewerId, candidate: event.candidate });
+    }
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "connected") {
+      setStatus("Viewer connected.");
+    }
+    if (pc.connectionState === "failed") {
+      setStatus("Viewer connection failed. Use the same network or add a TURN relay for internet streaming.");
     }
   };
 
@@ -120,6 +146,7 @@ async function startHosting() {
 
   localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
   localStream.getVideoTracks()[0]?.addEventListener("ended", stopHosting);
+  els.preview.muted = true;
   showVideo(localStream);
 
   role = "host";
@@ -151,6 +178,7 @@ async function joinAsViewer(nextRoomId) {
   role = "viewer";
   viewerPeer?.close();
   viewerPeer = new RTCPeerConnection(rtcConfig());
+  els.preview.muted = false;
   viewerPeer.ontrack = (event) => {
     showVideo(event.streams[0]);
     setStatus("Watching live stream.");
@@ -159,6 +187,15 @@ async function joinAsViewer(nextRoomId) {
     if (event.candidate) {
       socket.emit("signal:ice", { targetId: viewerPeer.hostId, candidate: event.candidate });
     }
+  };
+  viewerPeer.onconnectionstatechange = () => {
+    const state = viewerPeer.connectionState;
+    if (state === "connecting") setStatus("Connecting peer stream...");
+    if (state === "connected") setStatus("Watching live stream.");
+    if (state === "failed") {
+      setStatus("Peer connection failed. For internet viewing, this app needs a TURN relay.");
+    }
+    if (state === "disconnected") setStatus("Stream disconnected. Rejoin if it does not recover.");
   };
   socket.emit("viewer:join", { roomId });
   setStatus("Connecting to stream...");
@@ -177,6 +214,7 @@ els.joinRoom.addEventListener("click", () => {
   const nextRoomId = getRoomFromInput(els.roomInput.value);
   if (nextRoomId) joinAsViewer(nextRoomId);
 });
+els.playStream.addEventListener("click", () => playPreview());
 els.resolution.addEventListener("change", () => {
   retuneHostStream();
 });
@@ -214,6 +252,7 @@ socket.on("viewer:left", ({ viewerId, count }) => {
 socket.on("signal:offer", async ({ hostId, description }) => {
   viewerPeer.hostId = hostId;
   await viewerPeer.setRemoteDescription(description);
+  await flushPendingIce(hostId, viewerPeer);
   const answer = await viewerPeer.createAnswer();
   await viewerPeer.setLocalDescription(answer);
   socket.emit("signal:answer", { hostId, description: viewerPeer.localDescription });
@@ -221,13 +260,31 @@ socket.on("signal:offer", async ({ hostId, description }) => {
 
 socket.on("signal:answer", async ({ viewerId, description }) => {
   const pc = hostPeers.get(viewerId);
-  if (pc) await pc.setRemoteDescription(description);
+  if (pc) {
+    await pc.setRemoteDescription(description);
+    await flushPendingIce(viewerId, pc);
+  }
 });
 
 socket.on("signal:ice", async ({ fromId, candidate }) => {
   const pc = role === "host" ? hostPeers.get(fromId) : viewerPeer;
-  if (pc) await pc.addIceCandidate(candidate).catch(() => {});
+  if (!pc) return;
+  if (!pc.remoteDescription) {
+    const queued = pendingIce.get(fromId) || [];
+    queued.push(candidate);
+    pendingIce.set(fromId, queued);
+    return;
+  }
+  await pc.addIceCandidate(candidate).catch(() => {});
 });
+
+async function flushPendingIce(peerId, pc) {
+  const queued = pendingIce.get(peerId) || [];
+  pendingIce.delete(peerId);
+  for (const candidate of queued) {
+    await pc.addIceCandidate(candidate).catch(() => {});
+  }
+}
 
 socket.on("room:waiting", () => {
   setStatus("Waiting for the host to start streaming.");
