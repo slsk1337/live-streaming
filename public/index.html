@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Screen Stream Share</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="stage">
+        <div class="topbar">
+          <div>
+            <h1>Screen Stream Share</h1>
+            <p id="status">Create or join a live screen stream.</p>
+          </div>
+          <div class="badge" id="viewerCount">0 watching</div>
+        </div>
+
+        <video id="preview" autoplay playsinline muted></video>
+        <div class="empty" id="emptyState">
+          <strong>No stream connected</strong>
+          <span>Host a session or open a shared viewer link.</span>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="tabs" role="tablist">
+          <button class="tab active" id="hostTab" type="button">Host</button>
+          <button class="tab" id="watchTab" type="button">Watch</button>
+        </div>
+
+        <section class="pane active" id="hostPane">
+          <label for="resolution">Resolution</label>
+          <select id="resolution">
+            <option value="144">144p</option>
+            <option value="360">360p</option>
+            <option value="480">480p</option>
+            <option value="720" selected>720p</option>
+            <option value="1080">1080p</option>
+            <option value="2160">4K</option>
+          </select>
+
+          <label for="fps">Frame rate</label>
+          <select id="fps">
+            <option value="15">15 fps</option>
+            <option value="30" selected>30 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+
+          <label class="check">
+            <input id="includeAudio" type="checkbox" checked>
+            <span>Capture system audio when available</span>
+          </label>
+
+          <button class="primary" id="startHost" type="button">Start stream</button>
+          <button class="secondary" id="stopHost" type="button" disabled>Stop stream</button>
+
+          <div class="sharebox">
+            <label for="shareLink">Viewer link</label>
+            <div class="copyrow">
+              <input id="shareLink" readonly placeholder="Start a stream to create a link">
+              <button id="copyLink" type="button">Copy</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="pane" id="watchPane">
+          <label for="roomInput">Room code or link</label>
+          <input id="roomInput" placeholder="Paste a shared link">
+          <button class="primary" id="joinRoom" type="button">Watch stream</button>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
